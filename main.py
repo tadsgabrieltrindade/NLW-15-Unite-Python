@@ -7,3 +7,4 @@ result = db.teste()
 for row in result:
     print(row)
 db.close()
+
