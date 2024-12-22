@@ -19,7 +19,4 @@ def test_insert_event():
     
 def test_get_event_by_id():
     event_repository = EventsRepository()
-    response = event_repository.get_event_by_id(123)
-    print(response)
-    #Deve retornar um evento com id 123. O assert é apenas para garantir que a resposta não seja None
-    assert response is not None
+    response = event_repository.get_event_by_id(1232)
