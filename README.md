@@ -50,29 +50,31 @@ Para configurar a conexão com o banco de dados MSSQL, siga os passos abaixo:
     ```
     D:/WorkspaceProgramming/RocketSeat/Python/NLW-15-Unite-Python/
     │
-    ├── main.py
-    └── sql/
-        ├── conexao.py
-        └── queries.py
+    ├── src/
+    │   ├── models/
+    │   │   ├── entities/
+    │   │   │   ├── __init__.py
+    │   │   │   ├── events.py
+    │   │   │   └── teste.py
+    │   │   ├── repository/
+    │   │   │   ├── events_repository.py
+    │   │   │   ├── teste_repository.py
+    │   │   │   ├── events_repository_test.py
+    │   │   │   └── teste_repository_test.py
+    │   │   └── settings/
+    │   │       ├── __init__.py
+    │   │       ├── connection.py
+    │   │       └── create_tables.py
+    │   └── __init__.py
+    └── auth.ini
     ```
 
-3. O arquivo [main.py](http://_vscodecontentref_/0) deve conter o seguinte código para usar a classe [Database](http://_vscodecontentref_/1):
-
-    ```python
-    from sql.queries import Database
-
-    # Exemplo de uso da classe Database
-    db = Database()
-    result = db.teste()
-    for row in result:
-        print(row)
-    db.close()
-    ```
-
-4. O arquivo `conexao.py` deve conter o seguinte código para ler as credenciais do [auth.ini](http://_vscodecontentref_/2):
+3. O arquivo `connection.py` deve conter o seguinte código para configurar a conexão com o banco de dados usando SQLAlchemy:
 
     ```python
     import configparser
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
 
     def get_credentials():
         config = configparser.ConfigParser()
@@ -83,46 +85,122 @@ Para configurar a conexão com o banco de dados MSSQL, siga os passos abaixo:
             'username': config['database']['username'],
             'password': config['database']['password']
         }
+
+    credentials = get_credentials()
+    DATABASE_URL = f"mssql+pyodbc://{credentials['username']}:{credentials['password']}@{credentials['server']}/{credentials['database']}?driver=ODBC+Driver+17+for+SQL+Server"
+
+    engine = create_engine(DATABASE_URL)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    class DatabaseSession:
+        def __enter__(self):
+            self.session = SessionLocal()
+            return self.session
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.session.close()
+
+    db_connection = DatabaseSession()
     ```
 
-5. O arquivo [queries.py](http://_vscodecontentref_/3) deve conter a classe [Database](http://_vscodecontentref_/4) com os métodos para realizar operações CRUD:
+4. O arquivo `events.py` deve conter o seguinte código para definir o modelo de entidade `Events`:
 
     ```python
-    import pyodbc
-    from sql.conexao import get_credentials
+    from sqlalchemy import Column, String, Integer
+    from src.models.settings import Base
 
-    class Database:
-        def __init__(self):
-            credentials = get_credentials()
-            self.connection_string = (
-                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-                f"SERVER={credentials['server']};"
-                f"DATABASE={credentials['database']};"
-                f"UID={credentials['username']};"
-                f"PWD={credentials['password']}"
-            )
-            self.connection = pyodbc.connect(self.connection_string)
-            self.cursor = self.connection.cursor()
+    class Events(Base):
+        __tablename__ = 'events'
+        __table_args__ = {'schema': 'nlw_events'}
 
-        def fetch_all(self, query):
-            self.cursor.execute(query)
-            return self.cursor.fetchall()
-
-        def fetch_one(self, query):
-            self.cursor.execute(query)
-            return self.cursor.fetchone()
-
-        def execute(self, query):
-            self.cursor.execute(query)
-            self.connection.commit()
-
-        def close(self):
-            self.cursor.close()
-            self.connection.close()
-
-        def teste(self):
-            self.cursor.execute("SELECT [id],[teste] FROM [db_ROCKETSEAT].[dbo].[tbl_teste]")
-            return self.cursor.fetchall()
+        id = Column(String, primary_key=True, index=True)
+        title = Column(String, index=True)
+        details = Column(String)
+        slug = Column(String, unique=True, index=True)
+        maximum_attendees = Column(Integer)
     ```
 
-Agora, você está pronto para usar a classe [Database](http://_vscodecontentref_/5) para gerenciar a conexão com o banco de dados e realizar operações CRUD.
+5. O arquivo `events_repository.py` deve conter o seguinte código para implementar o repositório usando SQLAlchemy:
+
+    ```python
+    from typing import Dict
+    from src.models.settings.connection import db_connection
+    from src.models.entities.events import Events
+
+    class EventsRepository:
+        def insert_event(self, eventsInfo: Dict) -> Dict:
+            with db_connection as session:
+                event = Events(
+                    id=eventsInfo.get('uuid'),
+                    title=eventsInfo.get('title'),
+                    details=eventsInfo.get('details'),
+                    slug=eventsInfo.get('slug'),
+                    maximum_attendees=eventsInfo.get('maximum_attendees')
+                )
+                session.add(event)
+                session.commit()
+                return eventsInfo
+    ```
+
+6. O arquivo `events_repository_test.py` deve conter o seguinte código para testar o método `insert_event` usando `pytest`:
+
+    ```python
+    import sys
+    import os
+    import pytest
+
+    # Adiciona o diretório raiz do projeto ao sys.path
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+
+    from src.models.repository.events_repository import EventsRepository
+
+    @pytest.fixture
+    def event_data():
+        return {
+            "uuid": "123",
+            "title": "Teste",
+            "details": "teste",
+            "slug": "teste",
+            "maximum_attendees": 10 
+        }
+
+    def test_insert_event(event_data):
+        event_repository = EventsRepository()
+        response = event_repository.insert_event(event_data)
+        assert response["uuid"] == event_data["uuid"]
+        assert response["title"] == event_data["title"]
+        assert response["details"] == event_data["details"]
+        assert response["slug"] == event_data["slug"]
+        assert response["maximum_attendees"] == event_data["maximum_attendees"]
+
+    if __name__ == "__main__":
+        pytest.main()
+    ```
+
+7. Para criar a tabela `events` no banco de dados, execute o seguinte script:
+
+    ```python
+    from sqlalchemy import create_engine
+    from src.models.settings import Base
+    from src.models.entities.events import Events
+    from src.models.settings.connection import DATABASE_URL
+
+    engine = create_engine(DATABASE_URL)
+
+    # Cria todas as tabelas definidas nos modelos
+    Base.metadata.create_all(engine)
+    ```
+
+8. Execute o script para criar a tabela:
+
+    ```sh
+    python src/models/settings/create_tables.py
+    ```
+
+9. Execute os testes usando `pytest`:
+
+    ```sh
+    pytest src/models/repository/events_repository_test.py
+    ```
+
+Agora, você está pronto para usar a classe `DatabaseSession` para gerenciar a conexão com o banco de dados e realizar operações CRUD. Certifique-se de que o banco de dados e as tabelas estão configurados corretamente antes de executar os testes.
