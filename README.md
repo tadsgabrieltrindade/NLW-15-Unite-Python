@@ -51,11 +51,17 @@ Para configurar a conexão com o banco de dados MSSQL, siga os passos abaixo:
     D:/WorkspaceProgramming/RocketSeat/Python/NLW-15-Unite-Python/
     │
     ├── src/
+    │   ├── main/
+    │   │   ├── routes/
+    │   │   │   └── events_routes.py
+    │   │   └── server/
+    │   │       └── server.py
     │   ├── models/
     │   │   ├── entities/
     │   │   │   ├── __init__.py
     │   │   │   ├── events.py
-    │   │   │   └── teste.py
+    │   │   │   ├── teste.py
+    │   │   │   └── attendees.py
     │   │   ├── repository/
     │   │   │   ├── events_repository.py
     │   │   │   ├── teste_repository.py
@@ -65,6 +71,11 @@ Para configurar a conexão com o banco de dados MSSQL, siga os passos abaixo:
     │   │       ├── __init__.py
     │   │       ├── connection.py
     │   │       └── create_tables.py
+    │   ├── data/
+    │   │   └── event_handler.py
+    │   ├── http_types/
+    │   │   ├── http_request.py
+    │   │   └── http_response.py
     │   └── __init__.py
     └── auth.ini
     ```
@@ -126,20 +137,28 @@ Para configurar a conexão com o banco de dados MSSQL, siga os passos abaixo:
     from typing import Dict
     from src.models.settings.connection import db_connection
     from src.models.entities.events import Events
+    from sqlalchemy.exc import IntegrityError
 
     class EventsRepository:
         def insert_event(self, eventsInfo: Dict) -> Dict:
             with db_connection as session:
-                event = Events(
-                    id=eventsInfo.get('uuid'),
-                    title=eventsInfo.get('title'),
-                    details=eventsInfo.get('details'),
-                    slug=eventsInfo.get('slug'),
-                    maximum_attendees=eventsInfo.get('maximum_attendees')
-                )
-                session.add(event)
-                session.commit()
-                return eventsInfo
+                try:
+                    event = Events(
+                        id=eventsInfo.get('uuid'),
+                        title=eventsInfo.get('title'),
+                        details=eventsInfo.get('details'),
+                        slug=eventsInfo.get('slug'),
+                        maximum_attendees=eventsInfo.get('maximum_attendees')
+                    )
+                    session.add(event)
+                    session.commit()
+                    return eventsInfo
+                except IntegrityError:
+                    session.rollback()
+                    raise Exception("Evento já cadastrado")
+                except Exception as e:
+                    session.rollback()
+                    raise e
     ```
 
 6. O arquivo `events_repository_test.py` deve conter o seguinte código para testar o método `insert_event` usando `pytest`:
@@ -177,12 +196,49 @@ Para configurar a conexão com o banco de dados MSSQL, siga os passos abaixo:
         pytest.main()
     ```
 
-7. Para criar a tabela `events` no banco de dados, execute o seguinte script:
+7. O arquivo `events_routes.py` deve conter o seguinte código para definir a rota `/events` usando Flask:
+
+    ```python
+    from flask import Blueprint, jsonify, request
+    from src.http_types.http_request import HttpRequest
+    from src.http_types.http_response import HttpResponse
+    from src.data.event_handler import EventHandler
+
+    event_route_bp = Blueprint("event_route", __name__)
+
+    @event_route_bp.route("/events", methods=["POST"])
+    def create_events():
+        event_data = request.json
+        http_request = HttpRequest(body=event_data)
+        event_handler = EventHandler()
+        http_response = event_handler.register(http_request)
+
+        return jsonify(http_response.body), http_response.status_code
+    ```
+
+8. O arquivo `server.py` deve conter o seguinte código para iniciar o servidor Flask:
+
+    ```python
+    from flask import Flask
+    from flask_cors import CORS
+    from src.main.routes.events_routes import event_route_bp
+
+    app = Flask(__name__)
+    CORS(app)
+
+    app.register_blueprint(event_route_bp)
+
+    if __name__ == "__main__":
+        app.run(debug=True)
+    ```
+
+9. Para criar as tabelas no banco de dados, execute o seguinte script:
 
     ```python
     from sqlalchemy import create_engine
     from src.models.settings import Base
     from src.models.entities.events import Events
+    from src.models.entities.attendees import Attendees
     from src.models.settings.connection import DATABASE_URL
 
     engine = create_engine(DATABASE_URL)
@@ -191,13 +247,13 @@ Para configurar a conexão com o banco de dados MSSQL, siga os passos abaixo:
     Base.metadata.create_all(engine)
     ```
 
-8. Execute o script para criar a tabela:
+10. Execute o script para criar as tabelas:
 
     ```sh
     python src/models/settings/create_tables.py
     ```
 
-9. Execute os testes usando `pytest`:
+11. Execute os testes usando `pytest`:
 
     ```sh
     pytest src/models/repository/events_repository_test.py
