@@ -16,7 +16,15 @@ def test_insert_event():
     event_repository = EventsRepository()
     response = event_repository.insert_event(event)
     assert response is not None
-    
+
+# @pytest.mark.skip(reason="Teste ok")
 def test_get_event_by_id():
     event_repository = EventsRepository()
-    response = event_repository.get_event_by_id(1232)
+    response = event_repository.get_event_by_id(130)
+    print(response)
+
+@pytest.mark.skip(reason="Teste ok")
+def test_get_all_events():
+    event_repository = EventsRepository()
+    response = event_repository.get_all_events()
+    print(response)
